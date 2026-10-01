@@ -5,7 +5,10 @@
  * @returns {number}
  */
 function calculateSimpleRevenue(purchase, _product) {
-   // @TODO: Расчет выручки от операции
+  // @TODO: Расчет выручки от операции
+  const { discount, sale_price, quantity } = purchase;
+  const discountCoefficient = 1 - (discount / 100);
+  return sale_price * quantity * discountCoefficient;
 }
 
 /**
@@ -16,7 +19,20 @@ function calculateSimpleRevenue(purchase, _product) {
  * @returns {number}
  */
 function calculateBonusByProfit(index, total, seller) {
+    const { profit } = seller;
     // @TODO: Расчет бонуса от позиции в рейтинге
+    if (index === 0) {
+      return  profit * 0.15;
+    }
+    if (index === 1 || index === 2) {
+      return profit * 0.10;
+    }
+    if (index === total - 1) {
+      return 0;
+    } 
+    else {
+      return profit * 0.05;
+    }
 }
 
 /**
@@ -27,18 +43,101 @@ function calculateBonusByProfit(index, total, seller) {
  */
 function analyzeSalesData(data, options) {
     // @TODO: Проверка входных данных
+    if (!data
+      || !Array.isArray(data.sellers)
+      || data.sellers.length === 0
+      || !Array.isArray(data.products)
+      || data.products.length === 0
+      || !Array.isArray(data.purchase_records)
+      || data.purchase_records.length === 0
+    ) {
+      throw new Error('Некорректные входные данные');
+    }
 
     // @TODO: Проверка наличия опций
+    if (!options || typeof options !== "object") {
+      throw new Error('Некорректные опции');
+    }
+    const { calculateRevenue, calculateBonus } = options;
+    if (typeof calculateRevenue !== "function"){
+      throw new Error('calculateRevenue должна быть функцией');
+    } 
+    if (typeof calculateBonus !== "function"){
+      throw new Error('calculateBonus должна быть функцией');
+    } 
 
     // @TODO: Подготовка промежуточных данных для сбора статистики
-
+    const sellerStats = data.sellers.map(seller => ({
+      id: seller.id,
+      firstName: seller.first_name,
+      lastName: seller.last_name,
+      sales_count: 0,
+      revenue: 0,
+      profit: 0,
+      products_sold: {},
+      bonus: 0
+    }));
+    
     // @TODO: Индексация продавцов и товаров для быстрого доступа
+    const sellerIndex = Object.fromEntries(
+      sellerStats.map(seller => [seller.id, seller])
+    );
+
+    const productIndex = Object.fromEntries(
+      data.products.map(product => [product.sku, product])
+    );
 
     // @TODO: Расчет выручки и прибыли для каждого продавца
+    data.purchase_records.forEach(record => {
+      const seller = sellerIndex[record.seller_id];
+
+      seller.sales_count += 1;
+      seller.revenue += record.total_amount;
+      
+      record.items.forEach(item => {
+
+        const product = productIndex[item.sku];
+        const cost = product.purchase_price * item.quantity;
+        const revenue = calculateRevenue(item, product);
+        const profit = revenue - cost;
+        seller.profit += profit;
+
+        if (!seller.products_sold[item.sku]) {
+            seller.products_sold[item.sku] = 0;
+        }
+
+        seller.products_sold[item.sku] += item.quantity;
+        });
+    });
 
     // @TODO: Сортировка продавцов по прибыли
-
+    sellerStats.sort((a, b) => b.profit - a.profit);
+    
     // @TODO: Назначение премий на основе ранжирования
+    sellerStats.forEach((seller, index) => {
+      seller.bonus = calculateBonusByProfit(
+        index,
+        sellerStats.length,
+        seller
+      );
+
+      seller.top_products = Object.entries(seller.products_sold)
+        .map(([sku, quantity]) => ({
+          sku,
+          quantity
+      }))
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 10);
+    });
 
     // @TODO: Подготовка итоговой коллекции с нужными полями
+    return sellerStats.map(seller => ({
+      seller_id: seller.id,
+      name: `${seller.firstName} ${seller.lastName}`,
+      revenue: +seller.revenue.toFixed(2),
+      profit: +seller.profit.toFixed(2),
+      sales_count: seller.sales_count,
+      top_products: seller.top_products,
+      bonus: +seller.bonus.toFixed(2)
+    }));
 }
